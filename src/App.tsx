@@ -334,7 +334,14 @@ export default function App() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ action: 'save_entry', entry: entryWithId })
+          body: JSON.stringify({ 
+            action: 'save_entry', 
+            entry: {
+              ...entryWithId,
+              // Apply formula for Column D (cumulativeTotal) based on Column C (eatingStudents)
+              cumulativeTotal: `=INDIRECT("C"&ROW())+IF(ROW()>2,INDIRECT("D"&ROW()-1),0)`
+            } 
+          })
         });
         
         if (editingEntry) {
