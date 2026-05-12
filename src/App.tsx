@@ -172,26 +172,8 @@ export default function App() {
     }
   }, [syncWithSheet]);
 
-  // Derived Values
-  // Combine entries with cumulative sums
-  const entriesWithCumulative = useMemo(() => {
-    const sorted = [...(entries || [])].sort((a, b) => parseDateSafe(a.date).getTime() - parseDateSafe(b.date).getTime());
-    let runningTotal = 0;
-    const totalsMap = new Map();
-    
-    sorted.forEach(entry => {
-      runningTotal += (Number(entry.eatingStudents) || 0);
-      totalsMap.set(entry.id, runningTotal);
-    });
-
-    return (entries || []).map(entry => ({
-      ...entry,
-      cumulativeStudents: totalsMap.get(entry.id) || 0
-    }));
-  }, [entries]);
-
   const filteredEntries = useMemo(() => {
-    return (entriesWithCumulative || [])
+    return (entries || [])
       .filter(entry => {
         const entryDate = parseDateSafe(entry.date);
         const matchesStart = filterStartDate ? entryDate >= parseDateSafe(filterStartDate) : true;
@@ -199,7 +181,7 @@ export default function App() {
         return matchesStart && matchesEnd;
       })
       .sort((a, b) => parseDateSafe(b.date).getTime() - parseDateSafe(a.date).getTime());
-  }, [entriesWithCumulative, filterStartDate, filterEndDate]);
+  }, [entries, filterStartDate, filterEndDate]);
 
   const stats = useMemo(() => {
     return {
@@ -229,21 +211,27 @@ export default function App() {
     doc.text(`Duration: ${start} to ${end}`, 14, 28);
     doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, 14, 34);
 
+    let cumulativeCost = 0;
     const tableData = [...filteredEntries]
       .sort((a, b) => parseDateSafe(a.date).getTime() - parseDateSafe(b.date).getTime())
-      .map(e => [
-      formatDate(e.date),
-      e.mealType === 'lunch' ? 'Lunch' : 'Morning',
-      formatNumber(e.presentStudents, 0),
-      formatNumber(e.eatingStudents, 0),
-      formatNumber(e.foodCost, 2),
-      formatNumber(e.fruitCost, 2),
-      formatNumber(e.milkCost, 2),
-      formatNumber(Number(e.foodCost) + Number(e.fruitCost) + Number(e.milkCost), 2),
-      formatNumber(e.wheatQty, 3),
-      formatNumber(e.riceQty, 3),
-      formatNumber(e.milkQty, 3)
-    ]);
+      .map(e => {
+        const dailyTotal = (Number(e.foodCost) || 0) + (Number(e.fruitCost) || 0) + (Number(e.milkCost) || 0);
+        cumulativeCost += dailyTotal;
+        return [
+          formatDate(e.date),
+          e.mealType === 'lunch' ? 'Lunch' : 'Morning',
+          formatNumber(e.presentStudents, 0),
+          formatNumber(e.eatingStudents, 0),
+          formatNumber(e.foodCost, 2),
+          formatNumber(e.fruitCost, 2),
+          formatNumber(e.milkCost, 2),
+          formatNumber(dailyTotal, 2),
+          formatNumber(cumulativeCost, 2),
+          formatNumber(e.wheatQty, 3),
+          formatNumber(e.riceQty, 3),
+          formatNumber(e.milkQty, 3)
+        ];
+      });
 
     // Summary Row
     tableData.push([
@@ -255,18 +243,19 @@ export default function App() {
       formatNumber(stats.totalFruitCost, 2),
       formatNumber(stats.totalMilkCost, 2),
       formatNumber(stats.currentMonthCost + stats.totalFruitCost + stats.totalMilkCost, 2),
+      formatNumber(cumulativeCost, 2),
       formatNumber(stats.totalWheat, 3),
       formatNumber(stats.totalRice, 3),
       formatNumber(stats.totalMilk, 3)
     ]);
 
     autoTable(doc, {
-      head: [['Date', 'Meal', 'Total', 'Eating', 'Conv.', 'Fruit', 'Milk', 'Total Cost', 'Wheat', 'Rice', 'Milk(L)']],
+      head: [['Date', 'Meal', 'Total', 'Eating', 'Conv.', 'Fruit', 'Milk', 'Total Cost', 'Cumul. Cost', 'Wheat', 'Rice', 'Milk(L)']],
       body: tableData,
       startY: 40,
       styles: { 
-        fontSize: 8,
-        cellPadding: 2,
+        fontSize: 7.5,
+        cellPadding: 1.5,
         valign: 'middle',
         font: 'helvetica'
       },
@@ -284,10 +273,11 @@ export default function App() {
         4: { halign: 'right' },
         5: { halign: 'right' },
         6: { halign: 'right' },
-        7: { halign: 'right', fontStyle: 'bold' },
-        8: { halign: 'right' },
+        7: { halign: 'right' },
+        8: { halign: 'right', fontStyle: 'bold' },
         9: { halign: 'right' },
         10: { halign: 'right' },
+        11: { halign: 'right' },
       },
       didParseCell: (data) => {
         if (data.row.index === tableData.length - 1) {
@@ -609,7 +599,6 @@ export default function App() {
                   <th className="px-3 py-4">दिनाँक</th>
                   <th className="px-3 py-4">उपस्थित छात्र</th>
                   <th className="px-3 py-4">आज भोजन छात्र</th>
-                  <th className="px-3 py-4">क्रमागत योग</th>
                   <th className="px-3 py-4">गेहूँ (किग्रा)</th>
                   <th className="px-3 py-4">चावल (किग्रा)</th>
                   <th className="px-3 py-4">दूध (लीटर)</th>
@@ -623,7 +612,7 @@ export default function App() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {(filteredEntries as (DailyEntry & { cumulativeStudents: number })[]).map((entry) => (
+                {(filteredEntries as DailyEntry[]).map((entry) => (
                   <motion.tr 
                     key={entry.id} 
                     initial={{ opacity: 0 }}
@@ -635,7 +624,6 @@ export default function App() {
                     </td>
                     <td className="px-3 py-4 text-slate-600">{entry.presentStudents}</td>
                     <td className="px-3 py-4 text-slate-600 font-bold">{entry.eatingStudents}</td>
-                    <td className="px-3 py-4 text-indigo-600 font-mono font-bold">{entry.cumulativeStudents}</td>
                     <td className="px-3 py-4 text-slate-500 font-mono text-xs">
                       {Number(entry.wheatQty) > 0 ? Number(entry.wheatQty).toFixed(3) : '0.000'}
                     </td>
@@ -696,7 +684,6 @@ export default function App() {
                     <td className="px-3 py-4 text-slate-900">कुल योग</td>
                     <td className="px-3 py-4 text-slate-700">-</td>
                     <td className="px-3 py-4 text-indigo-600 font-mono font-bold">{stats.totalStudentsFeeding}</td>
-                    <td className="px-3 py-4 text-slate-700 font-mono font-bold">-</td>
                     <td className="px-3 py-4 text-slate-700 font-mono text-xs">{stats.totalWheat.toFixed(3)}</td>
                     <td className="px-3 py-4 text-slate-700 font-mono text-xs">{stats.totalRice.toFixed(3)}</td>
                     <td className="px-3 py-4 text-slate-700 font-mono text-xs">{stats.totalMilk.toFixed(3)}</td>
